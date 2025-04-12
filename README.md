@@ -40,6 +40,12 @@ If the entrypoint is `main.py`, use:
 python main.py
 ```
 
+Or using fastapi[strandard]:
+
+```bash
+fastapi dev main.py
+```
+
 **Or using uvicorn:**
 ```bash
 uvicorn main:app --reload
