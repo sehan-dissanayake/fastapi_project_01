@@ -1,42 +1,58 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
+from database import db
 
 app = FastAPI()
 
-all_todos = [
-    {'todo_id': 1, 'todo_name': 'Sports', 'todo_description': 'Go to the gym'},
-    {'todo_id': 2, 'todo_name': 'Read', 'todo_description': 'Read 10 pages'},
-    {'todo_id': 3, 'todo_name': 'Shop', 'todo_description': 'Go shopping'},
-    {'todo_id': 4, 'todo_name': 'Study', 'todo_description': 'Study for exam'},
-    {'todo_id': 5, 'todo_name': 'Meditate', 'todo_description': 'Meditate 20 minutes'}
-]
-
 @app.get('/')
 def index():
-    return {'message': 'Welcome to the ToDo'}
+    return {"message": "Welcome to the ToDo!"}
+
+@app.get('/todos')
+async def get_todos(number: Optional[int] = None):
+    todos = []
+    async for document in db.todos.find():
+        document.pop('_id')
+        todos.append(document)
+    return todos[:number]
 
 @app.get('/todos/{todo_id}')
-def get_todo(todo_id: int):
-    for todo in all_todos:
-        if todo['todo_id'] == todo_id:
-            return todo
-    return {'message': 'Todo not found'}
-          
-@app.get('/todos')
-def get_todos(first_n: int = None):
-    if first_n is not None:
-        return all_todos[:first_n]
-    return all_todos
-
+async def get_todo(todo_id: int):
+    todo = await db.todos.find_one({"id": todo_id})
+    if todo:
+        todo.pop('_id')
+        return todo
+    else:
+        return {"error": "Todo not found"}
+    
 class Todo(BaseModel):
-    todo_id: int
-    todo_name: str
-    todo_description: Optional[str] = None
+    title: str
+    description: Optional[str] = None
+    completed: bool = False
 
 @app.post('/todos')
-def create_todo(request: Todo):
-    new_todo = request.model_dump()
-    all_todos.append(new_todo)
-    return {'message': 'Todo created', 'todo': new_todo}
- 
+async def create_todo(todo: Todo):
+    todo_dict = todo.model_dump()
+    max_id_todo = await db.todos.find_one(sort=[("id", -1)])
+    todo_dict['id'] = (max_id_todo['id'] + 1) if max_id_todo else 1
+    await db.todos.insert_one(todo_dict)
+    todo_dict.pop('_id')
+    return todo_dict
+
+@app.put('/todos/{todo_id}')
+async def update_todo(todo_id: int, todo: Todo):
+    todo_dict = todo.model_dump()
+    result = await db.todos.update_one({"id": todo_id}, {"$set": todo_dict})
+    if result.modified_count == 1:
+        return {"message": "Todo updated successfully"}
+    else:
+        return {"error": "Todo not found"}
+    
+@app.delete('/todos/{todo_id}')
+async def delete_todo(todo_id: int):
+    result = await db.todos.delete_one({"id": todo_id})
+    if result.deleted_count == 1:
+        return {"message": "Todo deleted successfully"}
+    else:
+        return {"error": "Todo not found"}
